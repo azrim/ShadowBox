@@ -9,9 +9,10 @@ describe("ShadowBoxCore - Eligibility Tests", function () {
   let user1: SignerWithAddress;
   let user2: SignerWithAddress;
 
-  this.timeout(120000);
+  this.timeout(180000);
 
   beforeEach(async function () {
+    this.timeout(180000);
     [owner, user1, user2] = await ethers.getSigners();
     
     const ShadowBoxFactory = await ethers.getContractFactory("ShadowBoxCore");

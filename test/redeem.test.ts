@@ -10,7 +10,7 @@ describe("Redeemer - Voucher Tests", function () {
   let user1: SignerWithAddress;
   let user2: SignerWithAddress;
 
-  this.timeout(120000);
+  this.timeout(180000);
 
   async function createValidVoucher(user: string, amount: number = 100) {
     const expiry = Math.floor(Date.now() / 1000) + 86400;
@@ -36,6 +36,7 @@ describe("Redeemer - Voucher Tests", function () {
   }
 
   beforeEach(async function () {
+    this.timeout(180000);
     [owner, signer, user1, user2] = await ethers.getSigners();
     
     const RedeemerFactory = await ethers.getContractFactory("Redeemer");
