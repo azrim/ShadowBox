@@ -33,7 +33,7 @@ jobs:
       run: npm run test
     
     - name: Install frontend dependencies
-      run: cd frontend && npm ci
+      run: cd frontend && npm install
     
     - name: Type check frontend
       run: cd frontend && npm run type-check
