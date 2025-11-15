@@ -1,0 +1,49 @@
+# FHE Circuit: Loot Box Generation
+# This is a placeholder configuration for the FHE loot generation circuit
+#
+# Inputs (encrypted):
+#   - tier: euint8 (0-2)
+#   - nonce: euint64
+#   - randomSeed: euint256
+#
+# Outputs:
+#   - lootIndex: euint32 (index into loot table)
+#   - rewardAmount: euint64 (amount of reward tokens)
+#   - rewardType: euint8 (0 = tokens, 1 = NFT, 2 = voucher)
+#
+# Logic (pseudocode):
+#   baseProbability = tier * 20 + 30  # 30-70 range
+#   randomValue = (randomSeed + nonce) % 100
+#   
+#   if randomValue < baseProbability:
+#     rewardType = (randomValue % 3)
+#     lootIndex = (randomSeed / tier+1) % maxLootItems
+#     
+#     if tier == 2:
+#       rewardAmount = 1000000000000000000000  # 1000 tokens
+#     elif tier == 1:
+#       rewardAmount = 500000000000000000000   # 500 tokens
+#     else:
+#       rewardAmount = 100000000000000000000   # 100 tokens
+
+circuit loot {
+  input tier encrypted uint8;
+  input nonce encrypted uint64;
+  input randomSeed encrypted uint256;
+  
+  param max_loot_items = 100;
+  param tier_probability_base = 30;
+  param tier_probability_multiplier = 20;
+  
+  var baseProbability = tier * tier_probability_multiplier + tier_probability_base;
+  var randomValue = (randomSeed + nonce) % 100;
+  
+  var isWinner = randomValue < baseProbability;
+  
+  output rewardType = isWinner ? (randomValue % 3) : 0;
+  output lootIndex = isWinner ? ((randomSeed / (tier + 1)) % max_loot_items) : 0;
+  output rewardAmount = 
+    (tier == 2) ? 1000000000000000000000 :
+    (tier == 1) ? 500000000000000000000 :
+                  100000000000000000000;
+}

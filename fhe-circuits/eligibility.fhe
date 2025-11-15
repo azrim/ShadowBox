@@ -1,0 +1,41 @@
+# FHE Circuit: Eligibility Evaluation
+# This is a placeholder configuration for the FHE eligibility circuit
+#
+# Inputs (encrypted):
+#   - balance: euint64
+#   - nftFlags: euint32 (bitfield)
+#   - interactions: euint32
+#   - sybilScore: euint32 (scaled by 10000)
+#
+# Outputs:
+#   - eligible: ebool
+#
+# Logic (pseudocode):
+#   eligible = (balance >= threshold_balance) AND
+#              (nftFlags & required_flags != 0) AND
+#              (interactions >= min_interactions) AND
+#              (sybilScore <= max_sybil_score)
+#
+# Threshold values (configurable):
+#   threshold_balance: 1000000000000000000 (1 ETH in wei)
+#   required_flags: 0x01 (at least one NFT)
+#   min_interactions: 5
+#   max_sybil_score: 2000 (0.2 scaled by 10000)
+
+circuit eligibility {
+  input balance encrypted uint64;
+  input nftFlags encrypted uint32;
+  input interactions encrypted uint32;
+  input sybilScore encrypted uint32;
+  
+  param threshold_balance = 1000000000000000000;
+  param required_flags = 1;
+  param min_interactions = 5;
+  param max_sybil_score = 2000;
+  
+  output eligible = 
+    (balance >= threshold_balance) &
+    ((nftFlags & required_flags) != 0) &
+    (interactions >= min_interactions) &
+    (sybilScore <= max_sybil_score);
+}
