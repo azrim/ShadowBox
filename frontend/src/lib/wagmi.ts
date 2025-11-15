@@ -1,15 +1,23 @@
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { http } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { sepolia } from "@reown/appkit/networks";
+import { cookieStorage, createStorage } from "wagmi";
 
-export const config = getDefaultConfig({
-  appName: "ShadowBox",
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+export const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!;
 
-  chains: [sepolia],
-  transports: {
-    [sepolia.id]: http(process.env.NEXT_PUBLIC_RPC_URL!),
-  },
+if (!projectId) {
+  throw new Error("NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is required for AppKit");
+}
 
+export const networks = [sepolia];
+
+// Set up the Wagmi Adapter (Config)
+export const wagmiAdapter = new WagmiAdapter({
+  storage: createStorage({
+    storage: cookieStorage,
+  }),
   ssr: false,
+  networks,
+  projectId,
 });
+
+export const config = wagmiAdapter.wagmiConfig;

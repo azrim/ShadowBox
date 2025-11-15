@@ -1,7 +1,13 @@
-import Head from 'next/head';
-import { useRouter } from 'next/router';
-import Layout from '@/components/Layout';
-import DecryptionFlow from '@/components/DecryptionFlow';
+"use client";
+
+import Head from "next/head";
+import { useRouter } from "next/router";
+import Layout from "@/components/Layout";
+import dynamic from "next/dynamic";
+
+const DecryptionFlow = dynamic(() => import("@/components/DecryptionFlow"), {
+  ssr: false,
+});
 
 export default function Decrypt() {
   const router = useRouter();
@@ -14,7 +20,9 @@ export default function Decrypt() {
       </Head>
       <Layout>
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">Decrypt Your Loot Box</h1>
+          <h1 className="text-4xl font-bold text-white mb-2">
+            Decrypt Your Loot Box
+          </h1>
           <p className="text-dark-400">
             Use your wallet signature to decrypt your encrypted loot box locally
           </p>

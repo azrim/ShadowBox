@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IRedeemer.sol";
 
 contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
@@ -12,6 +13,7 @@ contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
     using MessageHashUtils for bytes32;
 
     address public signer;
+    IERC20 public rewardToken;
     mapping(bytes32 => bool) public usedVouchers;
     mapping(address => uint256) public rewardBalance;
     
@@ -27,8 +29,9 @@ contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
     event SignerUpdated(address indexed oldSigner, address indexed newSigner);
     event RewardsAdded(uint256 amount);
 
-    constructor(address _signer) Ownable(msg.sender) {
+    constructor(address _signer, address _rewardToken) Ownable(msg.sender) {
         signer = _signer;
+        rewardToken = IERC20(_rewardToken);
         paused = false;
     }
 
@@ -80,18 +83,22 @@ contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
         paused = _paused;
     }
 
-    function addRewards() external payable onlyOwner {
-        emit RewardsAdded(msg.value);
+    /// @notice Owner can fund the Redeemer with reward tokens.
+    function addRewards(uint256 amount) external onlyOwner {
+        bool ok = rewardToken.transferFrom(msg.sender, address(this), amount);
+        require(ok, "Token transfer failed");
+        emit RewardsAdded(amount);
     }
 
+    /// @notice Users withdraw their accumulated ERC20 rewards.
     function withdrawRewards() external nonReentrant {
         uint256 amount = rewardBalance[msg.sender];
         if (amount == 0) revert InsufficientRewards();
         
         rewardBalance[msg.sender] = 0;
         
-        (bool success, ) = payable(msg.sender).call{value: amount}("");
-        require(success, "Transfer failed");
+        bool ok = rewardToken.transfer(msg.sender, amount);
+        require(ok, "Token transfer failed");
     }
 
     function checkVoucher(Voucher calldata voucher) external view returns (bool isValid, bool isUsed) {
@@ -101,6 +108,6 @@ contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
     }
 
     receive() external payable {
-        emit RewardsAdded(msg.value);
+        revert("ETH not accepted");
     }
 }

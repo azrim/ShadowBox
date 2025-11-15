@@ -1,34 +1,33 @@
 # FHE Circuit: Tier Assignment
-# This is a placeholder configuration for the FHE tier assignment circuit
+# Mirrors ShadowBoxCore._evaluateFHE tier logic.
 #
 # Inputs (encrypted):
 #   - balance: euint64
 #   - interactions: euint32
-#   - eligibilityScore: euint32
 #
 # Outputs:
 #   - tier: euint8 (0 = Bronze, 1 = Silver, 2 = Gold)
 #
 # Logic (pseudocode):
-#   score = (balance / 1e18) * 40 + interactions * 20 + eligibilityScore
+#   balance_norm = balance / 1e18
+#   score = balance_norm * 20 + interactions * 5
 #   
-#   if score >= 8000: tier = 2 (Gold)
-#   elif score >= 5000: tier = 1 (Silver)
+#   if score >= 200: tier = 2 (Gold)
+#   elif score >= 100: tier = 1 (Silver)
 #   else: tier = 0 (Bronze)
 
 circuit tier {
   input balance encrypted uint64;
   input interactions encrypted uint32;
-  input eligibilityScore encrypted uint32;
   
-  param balance_weight = 40;
-  param interaction_weight = 20;
-  param gold_threshold = 8000;
-  param silver_threshold = 5000;
+  param balance_weight = 20;
+  param interaction_weight = 5;
+  param gold_threshold = 200;
+  param silver_threshold = 100;
   
-  var score = (balance / 1000000000000000000) * balance_weight +
-              interactions * interaction_weight +
-              eligibilityScore;
+  var balance_norm = balance / 1000000000000000000;
+  var score = balance_norm * balance_weight +
+              interactions * interaction_weight;
   
   output tier = 
     (score >= gold_threshold) ? 2 :

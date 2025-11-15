@@ -17,10 +17,10 @@
 #              (sybilScore <= max_sybil_score)
 #
 # Threshold values (configurable):
-#   threshold_balance: 1000000000000000000 (1 ETH in wei)
+#   threshold_balance: 0.25e18 (0.25 ETH in wei)
 #   required_flags: 0x01 (at least one NFT)
-#   min_interactions: 5
-#   max_sybil_score: 2000 (0.2 scaled by 10000)
+#   min_interactions: 3
+#   max_sybil_score: 5000 (0.5 * 1e4)
 
 circuit eligibility {
   input balance encrypted uint64;
@@ -28,10 +28,10 @@ circuit eligibility {
   input interactions encrypted uint32;
   input sybilScore encrypted uint32;
   
-  param threshold_balance = 1000000000000000000;
+  param threshold_balance = 250000000000000000;
   param required_flags = 1;
-  param min_interactions = 5;
-  param max_sybil_score = 2000;
+  param min_interactions = 3;
+  param max_sybil_score = 5000;
   
   output eligible = 
     (balance >= threshold_balance) &

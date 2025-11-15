@@ -1,58 +1,42 @@
-import { useState, useEffect } from 'react';
-import { useAccount, useWalletClient } from 'wagmi';
-import { ethers } from 'ethers';
-import { deriveKeyFromSignature, decryptLootCipher } from '@/lib/crypto';
-import { getShadowBoxContract, getEligibilityEvents } from '@/lib/contracts';
+"use client";
+
+import { useState, useEffect } from "react";
+import { useAccount, useWalletClient } from "wagmi";
+import { ethers } from "ethers";
+import { getFheInstance, getToken } from "@/lib/fhe";
+import { getShadowBoxContract } from "@/lib/contracts";
+import { rpcProvider } from "@/lib/provider";
 
 interface DecryptionFlowProps {
   transactionHash?: string;
 }
 
-export default function DecryptionFlow({ transactionHash }: DecryptionFlowProps) {
+export default function DecryptionFlow({
+  transactionHash,
+}: DecryptionFlowProps) {
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
-  
+
   const [lootData, setLootData] = useState<any>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [isClaiming, setIsClaiming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lootCipher, setLootCipher] = useState<string | null>(null);
+  const [hasEvent, setHasEvent] = useState(false);
 
   useEffect(() => {
-    if (transactionHash && address && walletClient) {
-      loadLootCipher();
+    if (transactionHash && address) {
+      setHasEvent(true);
     }
-  }, [transactionHash, address, walletClient]);
-
-  const loadLootCipher = async () => {
-    if (!address || !walletClient || !transactionHash) return;
-
-    try {
-      const provider = new ethers.BrowserProvider(walletClient as any);
-      const contractAddress = process.env.NEXT_PUBLIC_SHADOWBOX_ADDRESS;
-      
-      if (!contractAddress) {
-        throw new Error('Contract address not configured');
-      }
-
-      const contract = getShadowBoxContract(contractAddress, provider);
-      const events = await getEligibilityEvents(contract, address);
-      
-      const event = events.find(e => e.transactionHash === transactionHash);
-      
-      if (event && event.lootCipher) {
-        setLootCipher(event.lootCipher);
-      } else {
-        setError('Loot cipher not found for this transaction');
-      }
-    } catch (err: any) {
-      console.error('Error loading loot cipher:', err);
-      setError(err.message || 'Failed to load loot cipher');
-    }
-  };
+  }, [transactionHash, address]);
 
   const handleDecrypt = async () => {
-    if (!address || !walletClient || !lootCipher) {
-      setError('Missing required data');
+    if (!address) {
+      setError("Please connect your wallet");
+      return;
+    }
+
+    if (typeof window === "undefined" || !(window as any).ethereum) {
+      setError("No injected wallet provider found in browser (window.ethereum is missing)");
       return;
     }
 
@@ -60,37 +44,130 @@ export default function DecryptionFlow({ transactionHash }: DecryptionFlowProps)
     setError(null);
 
     try {
-      const provider = new ethers.BrowserProvider(walletClient as any);
-      const signer = await provider.getSigner();
-      
-      const { key } = await deriveKeyFromSignature(signer, address);
-      
-      const decrypted = await decryptLootCipher(key, lootCipher);
-      
-      setLootData(decrypted);
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const contractAddress = process.env.NEXT_PUBLIC_SHADOWBOX_ADDRESS!;
+
+      const fhe = await getFheInstance();
+
+      const contract = getShadowBoxContract(contractAddress, rpcProvider);
+
+      const token = await getToken(contractAddress, provider);
+      const encEligibilityBytes: string = await contract.getUserEligibility(address);
+      const encTierBytes: string = await contract.getUserTier(address);
+      const encLootIndexBytes: string = await contract.getUserLootIndex(address);
+      const encRewardAmountBytes: string = await contract.getUserRewardAmount(address);
+
+      const handles = [
+        { handle: encEligibilityBytes, contractAddress },
+        { handle: encTierBytes, contractAddress },
+        { handle: encLootIndexBytes, contractAddress },
+        { handle: encRewardAmountBytes, contractAddress },
+      ];
+
+      const decrypted = await fhe.userDecrypt(
+        handles,
+        token.privateKey,
+        token.publicKey,
+        token.signature,
+        [contractAddress],
+        address,
+        token.startTimestamp,
+        token.durationDays
+      );
+
+      const eligibleVal = decrypted[encEligibilityBytes];
+      const tierVal = decrypted[encTierBytes];
+      const lootIndexVal = decrypted[encLootIndexBytes];
+      const rewardAmountVal = decrypted[encRewardAmountBytes];
+
+      setLootData({
+        eligible: Boolean(eligibleVal),
+        tier: tierVal != null ? Number(tierVal) : 0,
+        lootIndex: lootIndexVal != null ? Number(lootIndexVal) : 0,
+        rewardAmount:
+          rewardAmountVal != null
+            ? ethers.formatEther(rewardAmountVal.toString())
+            : "0",
+      });
     } catch (err: any) {
-      console.error('Decryption error:', err);
-      setError(err.message || 'Failed to decrypt loot');
+      console.error("Decryption error:", err);
+      let message = err.message || "Failed to decrypt loot";
+      if (
+        message.includes("FHE_NODE_NOT_CONNECTED") ||
+        message.includes("HTTP request failed")
+      ) {
+        message = "Failed to connect to FHE coprocessor. Please try again.";
+      }
+      setError(message);
     } finally {
       setIsDecrypting(false);
     }
   };
 
-  const getTierName = (tier: number) => {
-    const names = ['Bronze', 'Silver', 'Gold'];
-    return names[tier] || 'Unknown';
+  const getTierName = (tier: number) =>
+    ["Bronze", "Silver", "Gold"][tier] || "Unknown";
+
+  const getTierColor = (tier: number) =>
+    ["text-orange-400", "text-gray-300", "text-yellow-400"][tier] ||
+    "text-gray-400";
+
+  const handleClaim = async () => {
+    if (!address) {
+      setError("Please connect your wallet");
+      return;
+    }
+
+    if (!lootData || !lootData.eligible) {
+      setError("No claimable reward available");
+      return;
+    }
+
+    if (typeof window === "undefined" || !(window as any).ethereum) {
+      setError(
+        "No injected wallet provider found in browser (window.ethereum is missing)",
+      );
+      return;
+    }
+
+    try {
+      setIsClaiming(true);
+      setError(null);
+
+      // 1) Ask backend to issue + redeem voucher for this user & tier
+      const res = await fetch("/api/issue-voucher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: address, tier: lootData.tier }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to issue voucher");
+      }
+
+      // 2) Withdraw credited rewards via Redeemer
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const redeemerAddress = process.env.NEXT_PUBLIC_REDEEMER_ADDRESS!;
+
+      const { getRedeemerContract } = await import("@/lib/contracts");
+      const redeemer = getRedeemerContract(redeemerAddress, signer);
+
+      const tx = await redeemer.withdrawRewards();
+      await tx.wait();
+    } catch (err: any) {
+      console.error("Claim error:", err);
+      setError(err.message || "Failed to claim rewards");
+    } finally {
+      setIsClaiming(false);
+    }
   };
 
-  const getTierColor = (tier: number) => {
-    const colors = ['text-orange-400', 'text-gray-300', 'text-yellow-400'];
-    return colors[tier] || 'text-gray-400';
-  };
-
-  if (!address) {
+  if (!hasEvent && !error) {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="bg-dark-800 rounded-lg p-8 border border-dark-700 text-center">
-          <p className="text-dark-400">Please connect your wallet to decrypt your loot</p>
+          <p className="text-dark-400">Loading submission data...</p>
         </div>
       </div>
     );
@@ -99,110 +176,76 @@ export default function DecryptionFlow({ transactionHash }: DecryptionFlowProps)
   return (
     <div className="max-w-2xl mx-auto">
       <div className="bg-dark-800 rounded-lg p-6 border border-dark-700">
-        <h2 className="text-2xl font-bold text-white mb-6">Decrypt Your Loot Box</h2>
-        
+        <h2 className="text-2xl font-bold text-white mb-6">
+          Decrypt Your Loot Box
+        </h2>
+
         {!lootData ? (
           <>
-            {lootCipher && (
-              <div className="mb-6 p-4 bg-dark-700/50 rounded-lg">
-                <p className="text-dark-400 text-sm mb-2">Encrypted Loot Cipher:</p>
-                <p className="text-dark-300 font-mono text-xs break-all">
-                  {lootCipher.slice(0, 100)}...
-                </p>
-              </div>
-            )}
-            
+            <div className="mb-6 p-4 bg-dark-700/50 rounded-lg">
+              <p className="text-dark-400 text-sm mb-2">
+                Your encrypted loot is stored on-chain. You will be asked to
+                sign a message to generate your decryption token.
+              </p>
+            </div>
+
             <button
               onClick={handleDecrypt}
-              disabled={isDecrypting || !lootCipher}
-              className="w-full px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-500 text-white rounded-lg hover:from-primary-500 hover:to-primary-400 transition disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              disabled={isDecrypting || !hasEvent || !walletClient}
+              className="w-full px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-500 text-white rounded-lg hover:from-primary-500 hover:to-primary-400 transition disabled:opacity-50 font-semibold"
             >
-              {isDecrypting ? 'Decrypting...' : 'Decrypt Loot Box'}
+              {isDecrypting ? "Decrypting..." : "Decrypt Loot Box"}
             </button>
-            
+
             {error && (
               <div className="mt-4 p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
                 <p className="text-red-400 text-sm">{error}</p>
               </div>
             )}
-            
-            <div className="mt-6 p-4 bg-dark-700/50 rounded-lg">
-              <p className="text-dark-400 text-sm">
-                <strong>How it works:</strong> You'll sign a message to derive the same key used for encryption. 
-                This key decrypts your loot box locally—no keys leave your browser.
-              </p>
-            </div>
           </>
         ) : (
-          <div className="space-y-6">
-            <div className="bg-gradient-to-br from-primary-900/20 to-primary-800/10 border border-primary-500/30 rounded-lg p-6">
-              <div className="text-center mb-6">
-                <div className="inline-block p-4 bg-primary-500/20 rounded-full mb-4">
-                  <svg className="w-16 h-16 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
-                  </svg>
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-2">🎉 Loot Unlocked!</h3>
-                <p className={`text-lg font-semibold ${getTierColor(lootData.tier)}`}>
-                  {getTierName(lootData.tier)} Tier
-                </p>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 text-center">
-                <div className="bg-dark-800/50 rounded-lg p-4">
-                  <p className="text-dark-400 text-sm mb-1">Reward Type</p>
-                  <p className="text-white font-semibold capitalize">{lootData.rewardType}</p>
-                </div>
-                <div className="bg-dark-800/50 rounded-lg p-4">
-                  <p className="text-dark-400 text-sm mb-1">Amount</p>
-                  <p className="text-white font-semibold">{lootData.amount}</p>
-                </div>
-                <div className="bg-dark-800/50 rounded-lg p-4 col-span-2">
-                  <p className="text-dark-400 text-sm mb-1">Loot Index</p>
-                  <p className="text-white font-semibold">#{lootData.lootIndex}</p>
-                </div>
-              </div>
-            </div>
-            
-            {lootData.voucherData && (
-              <div className="bg-dark-700/50 rounded-lg p-4">
-                <h4 className="text-white font-semibold mb-3">Voucher Details</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-dark-400">Amount:</span>
-                    <span className="text-white font-mono">
-                      {ethers.formatEther(lootData.voucherData.amount)} ETH
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-dark-400">Expires:</span>
-                    <span className="text-white">
-                      {new Date(lootData.voucherData.expiry * 1000).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-dark-400">Nonce:</span>
-                    <span className="text-white font-mono">{lootData.voucherData.voucherNonce}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div className="flex space-x-4">
-              <a
-                href="/status"
-                className="flex-1 px-6 py-3 bg-dark-700 text-white rounded-lg hover:bg-dark-600 transition text-center"
+          <>
+            <div className="bg-dark-700 rounded-lg p-6 border border-dark-600">
+              <h3 className="text-xl font-bold text-white mb-4">
+                🎉 Loot Unlocked{" "}
+                {lootData.eligible && `(${getTierName(lootData.tier)})`}
+              </h3>
+
+              <p
+                className={`font-semibold ${
+                  lootData.eligible ? "text-green-400" : "text-red-400"
+                } mb-2`}
               >
-                Back to Status
-              </a>
-              <a
-                href="/redeem"
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg hover:from-green-500 hover:to-green-400 transition text-center font-semibold"
-              >
-                Redeem Voucher →
-              </a>
+                Eligibility:{" "}
+                {lootData.eligible ? "✓ Eligible" : "✗ Not Eligible"}
+              </p>
+              {lootData.eligible && (
+                <>
+                  <p
+                    className={`font-semibold ${getTierColor(
+                      lootData.tier,
+                    )} mb-2`}
+                  >
+                    Tier: {getTierName(lootData.tier)}
+                  </p>
+                  <p className="text-white mb-2">
+                    Reward Amount: {lootData.rewardAmount} SHBX
+                  </p>
+                  <p className="text-white mb-4">
+                    Loot Index: {lootData.lootIndex}
+                  </p>
+
+                  <button
+                    onClick={handleClaim}
+                    disabled={isClaiming}
+                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition disabled:opacity-50"
+                  >
+                    {isClaiming ? "Claiming..." : "Claim Reward"}
+                  </button>
+                </>
+              )}
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>

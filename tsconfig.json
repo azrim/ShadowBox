@@ -10,9 +10,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
-    "types": ["node", "mocha", "chai"]
+    "moduleResolution": "node"
   },
-  "include": ["./scripts", "./test", "./typechain-types"],
+  "include": ["./scripts", "./test", "./typechain-types", "hardhat.config.ts"],
   "exclude": ["node_modules", "dist", "frontend"]
 }

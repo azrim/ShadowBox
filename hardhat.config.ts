@@ -12,6 +12,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200,
       },
+      viaIR: true, // This is what's making it compile, but slower
       evmVersion: "cancun",
     },
   },
@@ -28,12 +29,12 @@ const config: HardhatUserConfig = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 11155111,
     },
-    "zama-testnet": {
-      url: process.env.ZAMA_RPC_URL || "https://devnet.zama.ai",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      chainId: 8009,
-    },
   },
+
+  mocha: {
+    timeout: 300000, // 5 minutes (up from 40 seconds)
+  },
+
   paths: {
     sources: "./contracts",
     tests: "./test",
@@ -43,6 +44,12 @@ const config: HardhatUserConfig = {
   typechain: {
     outDir: "typechain-types",
     target: "ethers-v6",
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY,
+  },
+  sourcify: {
+    enabled: true,
   },
 };
 

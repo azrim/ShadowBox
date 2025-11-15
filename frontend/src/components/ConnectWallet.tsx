@@ -1,9 +1,8 @@
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-
 export default function ConnectWallet() {
   return (
     <div className="flex justify-center items-center">
-      <ConnectButton />
+      {/* AppKit web component button */}
+      <appkit-button></appkit-button>
     </div>
   );
 }

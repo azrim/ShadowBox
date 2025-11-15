@@ -1,35 +1,32 @@
 # FHE Circuit: Loot Box Generation
-# This is a placeholder configuration for the FHE loot generation circuit
+# Mirrors ShadowBoxCore._evaluateFHE loot logic.
 #
 # Inputs (encrypted):
 #   - tier: euint8 (0-2)
 #   - nonce: euint64
-#   - randomSeed: euint256
+#   - randomSeed: euint64 (derived from keccak256(...) and truncated)
 #
 # Outputs:
 #   - lootIndex: euint32 (index into loot table)
-#   - rewardAmount: euint64 (amount of reward tokens)
-#   - rewardType: euint8 (0 = tokens, 1 = NFT, 2 = voucher)
+#   - rewardAmount: euint256 (amount of reward tokens in wei)
 #
 # Logic (pseudocode):
-#   baseProbability = tier * 20 + 30  # 30-70 range
+#   baseProbability = tier * 20 + 30        # 30-70 range
 #   randomValue = (randomSeed + nonce) % 100
-#   
-#   if randomValue < baseProbability:
-#     rewardType = (randomValue % 3)
-#     lootIndex = (randomSeed / tier+1) % maxLootItems
-#     
-#     if tier == 2:
-#       rewardAmount = 1000000000000000000000  # 1000 tokens
-#     elif tier == 1:
-#       rewardAmount = 500000000000000000000   # 500 tokens
-#     else:
-#       rewardAmount = 100000000000000000000   # 100 tokens
+#   isWinner = randomValue < baseProbability
+#
+#   lootIndex = isWinner ? (randomSeed % max_loot_items) : 0
+#
+#   rawAmount =
+#     (tier == 2) ? 1000e18 :
+#     (tier == 1) ?  500e18 :
+#                    100e18
+#   rewardAmount = isWinner ? rawAmount : 0
 
 circuit loot {
   input tier encrypted uint8;
   input nonce encrypted uint64;
-  input randomSeed encrypted uint256;
+  input randomSeed encrypted uint64;
   
   param max_loot_items = 100;
   param tier_probability_base = 30;
@@ -40,10 +37,11 @@ circuit loot {
   
   var isWinner = randomValue < baseProbability;
   
-  output rewardType = isWinner ? (randomValue % 3) : 0;
-  output lootIndex = isWinner ? ((randomSeed / (tier + 1)) % max_loot_items) : 0;
+  output lootIndex = isWinner ? (randomSeed % max_loot_items) : 0;
   output rewardAmount = 
-    (tier == 2) ? 1000000000000000000000 :
-    (tier == 1) ? 500000000000000000000 :
-                  100000000000000000000;
+    isWinner ? (
+      (tier == 2) ? 1000000000000000000000 :
+      (tier == 1) ?  500000000000000000000 :
+                    100000000000000000000
+    ) : 0;
 }
