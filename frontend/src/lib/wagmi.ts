@@ -8,10 +8,8 @@ export const config = getDefaultConfig({
 
   chains: [sepolia],
   transports: {
-    [sepolia.id]: http(),
+    [sepolia.id]: http(process.env.NEXT_PUBLIC_RPC_URL!),
   },
 
   ssr: false,
 });
-
-export { sepolia };
