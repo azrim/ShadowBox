@@ -5,10 +5,6 @@ const nextConfig = {
   outputFileTracingRoot: path.join(__dirname),
   reactStrictMode: true,
 
-  // Empty Turbopack config to indicate explicit Turbopack usage in dev.
-  // Webpack config below is still used for production builds.
-  turbopack: {},
-
   webpack: (config, { isServer }) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
