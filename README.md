@@ -4,6 +4,11 @@
 
 ShadowBox demonstrates private eligibility, private tier assignment, and encrypted loot boxes using Fully Homomorphic Encryption on FHEVM. Users keep their eligibility data private; the contract learns only `eligible` + an encrypted reward blob. Decryption happens client-side after eligibility is confirmed.
 
+## 🌐 Live Demo
+
+- Live dapp: https://shadow-box-beta.vercel.app
+- Demo video: available on the `/demo` page (both locally and on the live dapp).
+
 ## 🎯 What It Does
 
 - **Private Eligibility Evaluation**: Users submit encrypted data (balance, NFT holdings, interactions, sybil scores)
@@ -128,19 +133,55 @@ npm run compile
 npm run test
 ```
 
-Expected output:
-```
-  ShadowBoxCore - Eligibility Tests
-    ✓ Should set the correct owner
-    ✓ Should allow user to submit eligibility
-    ✓ Should enforce cooldown between submissions
-    ... (more tests)
+You should see output similar to:
+```text
+  ShadowBoxCore - Tests
+    Deployment
+      ✓ Should set the correct owner
+      ✓ Should initialize with nonce 0
+      ✓ Should not be paused initially
+    Pause Functionality
+      ✓ Should allow owner to pause and unpause
+      ✓ Should emit ConfigUpdated event when paused/unpaused
+      ✓ Should revert submissions when paused
+      ✓ Should not allow non-owner to pause
+    User Status
+      ✓ Should return correct status for new user
+      ✓ Should return correct status when paused
+    Eligibility Submission (FHE)
+      ✓ Should revert if inputProof is empty
+      - Should allow a user to submit eligibility
+      - Should enforce cooldown between submissions
+      - Should allow submission after cooldown period
 
   Redeemer - Voucher Tests
-    ✓ Should allow redeeming valid voucher
-    ✓ Should reject already used voucher
-    ... (more tests)
+    Deployment
+      ✓ Should set the correct signer
+      ✓ Should set the correct owner
+      ✓ Should not be paused initially
+    Voucher Creation and Redemption
+      ✓ Should allow redeeming valid voucher
+      ✓ Should update reward balance after redemption
+      ✓ Should reject already used voucher
+      ✓ Should reject expired voucher
+      ✓ Should reject voucher with invalid signature
+    Reward Withdrawal
+      ✓ Should allow user to withdraw rewards
+      ✓ Should revert withdrawal with no rewards
+    Admin Functions
+      ✓ Should allow owner to update signer
+      ✓ Should not allow non-owner to update signer
+      ✓ Should allow owner to pause
+      ✓ Should reject redemptions when paused
+    Voucher Validation
+      ✓ Should correctly check voucher validity
+      ✓ Should mark voucher as used after redemption
+
+  26 passing
+  3 pending
 ```
+
+> Note: the pending tests correspond to FHEVM-dependent flows that require a live FHE node; they are intentionally marked with `it.skip`.
 
 ### Deploy Contracts
 
@@ -342,6 +383,8 @@ On top of this encrypted eligibility pipeline, ShadowBox adds an encrypted tier 
 
 ## 🧪 Testing
 
+Most of the suite runs entirely against Hardhat locally. A small number of FHEVM-dependent tests are skipped by default.
+
 ### Run All Tests
 ```bash
 npm run test
@@ -445,8 +488,8 @@ Set environment variables in Vercel dashboard:
 - [x] Decryption flow
 - [x] Vercel configuration
 - [ ] Production FHE integration
-- [ ] Demo video
-- [ ] Live deployment
+- [x] Demo video (embedded on `/demo` page)
+- [x] Live deployment (`https://shadow-box-beta.vercel.app`)
 
 ## 🤝 Contributing
 
@@ -462,6 +505,7 @@ MIT License - see LICENSE file for details
 
 ## 🔗 Links
 
+- **Live dapp**: https://shadow-box-beta.vercel.app
 - **Documentation**: [Blueprint](./shadow_box_full_blueprint_hybrid_shadow_airdrop.md)
 - **Zama Docs**: https://docs.zama.ai
 - **FHEVM**: https://github.com/zama-ai/fhevm

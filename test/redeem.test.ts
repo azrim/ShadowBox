@@ -1,10 +1,11 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { Redeemer } from "../typechain-types";
+import { Redeemer, RewardToken } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-toolbox/signers";
 
 describe("Redeemer - Voucher Tests", function () {
   let redeemer: Redeemer;
+  let rewardToken: RewardToken;
   let owner: SignerWithAddress;
   let signer: SignerWithAddress;
   let user1: SignerWithAddress;
@@ -38,15 +39,27 @@ describe("Redeemer - Voucher Tests", function () {
   beforeEach(async function () {
     this.timeout(180000);
     [owner, signer, user1, user2] = await ethers.getSigners();
-    
+
+    // Deploy ERC20 reward token with a large initial supply to the owner
+    const RewardTokenFactory = await ethers.getContractFactory("RewardToken");
+    rewardToken = (await RewardTokenFactory.deploy(
+      ethers.parseEther("1000000")
+    )) as RewardToken;
+    await rewardToken.waitForDeployment();
+
+    // Deploy Redeemer with signer and reward token address
     const RedeemerFactory = await ethers.getContractFactory("Redeemer");
-    redeemer = await RedeemerFactory.deploy(signer.address);
+    redeemer = (await RedeemerFactory.deploy(
+      signer.address,
+      await rewardToken.getAddress()
+    )) as Redeemer;
     await redeemer.waitForDeployment();
-    
-    await owner.sendTransaction({
-      to: await redeemer.getAddress(),
-      value: ethers.parseEther("10")
-    });
+
+    // Fund Redeemer with reward tokens via addRewards
+    const redeemerAddress = await redeemer.getAddress();
+    const fundingAmount = ethers.parseEther("100000");
+    await rewardToken.approve(redeemerAddress, fundingAmount);
+    await redeemer.connect(owner).addRewards(fundingAmount);
   });
 
   describe("Deployment", function () {
@@ -140,15 +153,15 @@ describe("Redeemer - Voucher Tests", function () {
     it("Should allow user to withdraw rewards", async function () {
       const { voucher, signature } = await createValidVoucher(user1.address, 1);
       await redeemer.connect(user1).redeem(voucher, signature);
-      
-      const balanceBefore = await ethers.provider.getBalance(user1.address);
+
+      const balanceBefore = await rewardToken.balanceOf(user1.address);
       const rewardAmount = await redeemer.rewardBalance(user1.address);
-      
+
       await redeemer.connect(user1).withdrawRewards();
-      
-      const balanceAfter = await ethers.provider.getBalance(user1.address);
-      expect(balanceAfter).to.be.gt(balanceBefore);
-      
+
+      const balanceAfter = await rewardToken.balanceOf(user1.address);
+      expect(balanceAfter).to.equal(balanceBefore + rewardAmount);
+
       expect(await redeemer.rewardBalance(user1.address)).to.equal(0);
     });
 

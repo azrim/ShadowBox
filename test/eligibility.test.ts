@@ -5,14 +5,16 @@ import { ShadowBoxCore } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 
-// This is the corrected dummy payload.
-// It now matches the nested struct { bytes data; }
-// for each 'externalEuint' type in the contract.
+// Dummy payload for EncryptedPayload. For the FHE external types,
+// the ABI expects fixed-size bytes (e.g. bytes32). We'll just use
+// a zeroed 32-byte value for all fields.
+const DUMMY_BYTES32 = "0x" + "00".repeat(32);
+
 const dummyEncryptedPayload = {
-  balance: { data: "0x00" },
-  nftFlags: { data: "0x00" },
-  interactions: { data: "0x00" },
-  sybilScore: { data: "0x00" },
+  balance: DUMMY_BYTES32,
+  nftFlags: DUMMY_BYTES32,
+  interactions: DUMMY_BYTES32,
+  sybilScore: DUMMY_BYTES32,
 };
 const dummyInputProof = "0x01"; // Must be non-empty
 const emptyInputProof = "0x";
