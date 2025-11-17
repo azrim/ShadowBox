@@ -13,11 +13,18 @@ export default function Demo() {
           
           <div className="bg-dark-800 rounded-lg p-6 border border-dark-700 mb-8">
             <h2 className="text-2xl font-bold text-white mb-4">Demo Video</h2>
-            <div className="aspect-video bg-dark-700 rounded-lg flex items-center justify-center">
-              <p className="text-dark-400">Demo video placeholder</p>
+            <div className="aspect-video bg-dark-700 rounded-lg overflow-hidden">
+              <video
+                className="w-full h-full"
+                src="/shadowbox-demo.webm"
+                controls
+                preload="metadata"
+              >
+                Your browser does not support the video tag.
+              </video>
             </div>
             <p className="text-dark-400 mt-4">
-              Watch how ShadowBox enables private airdrops using Fully Homomorphic Encryption
+              Watch how ShadowBox enables private airdrops using Fully Homomorphic Encryption.
             </p>
           </div>
 
