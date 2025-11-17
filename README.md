@@ -221,6 +221,125 @@ If you received a voucher, use the redeem page to claim your tokens.
 - 🔑 Decryption happens client-side
 - 🔑 No keys transmitted to servers
 
+## 🏁 Submission Overview
+
+### 1. Project Summary
+
+ShadowBox is a hybrid private airdrop system built on Zama FHEVM. Users prove eligibility for a rewards program by submitting encrypted on-chain metrics—balance, NFT flags, interaction counts, and sybil scores—without revealing any of these values to the contracts or other users. The contracts only learn a minimal eligibility flag and store all other computed results (tier, loot index, reward amount) as ciphertext.
+
+On top of this encrypted eligibility pipeline, ShadowBox adds an encrypted tier and loot system and a token-based reward claim path. Users decrypt their loot locally in the browser using keys derived from their wallet signatures, then claim SHBX reward tokens via a voucher-based Redeemer contract. The end result is a fully on-chain airdrop flow where scoring and reward sizing happen under FHE, while the UX still feels like a standard Web3 dapp.
+
+### 2. FHEVM Integration
+
+**Encrypted data & results**
+- Inputs encrypted client-side:
+  - Balance (scaled 18-decimals, euint64)
+  - NFT flags bitfield (euint32)
+  - Interaction count (euint32)
+  - Sybil score (scaled 0–10,000, euint32)
+- On-chain FHE-computed outputs stored encrypted:
+  - Eligibility boolean (`ebool` → `bytes32`)
+  - Tier (0/1/2 as `euint8` → `bytes32`)
+  - Loot index (`euint32` → `bytes32`)
+  - Reward amount (`euint256` → `bytes32`, interpreted as SHBX amount)
+
+**How `@fhevm/solidity` is used**
+- `ShadowBoxCore` now inherits `ZamaEthereumConfig` and uses `FHE`/`FheType` primitives from `@fhevm/solidity` plus `externalEuintXX` handles from `encrypted-types`.
+- `submitEligibility` takes an `EncryptedPayload` made of external encrypted integers and an `inputProof`, then reconstructs internal encrypted values using `FHE.fromExternal(...)`.
+- The `_evaluateFHE` helper performs all logic over encrypted types:
+  - Eligibility checks with `FHE.ge`, `FHE.le`, `FHE.and`, `FHE.ne`.
+  - Tier scoring with encrypted arithmetic and nested `FHE.select` calls.
+  - Loot randomness using an encrypted random seed derived from `keccak256(block.timestamp, nonce, msg.sender)` and `FHE.rem`/`FHE.add`.
+- After computing encrypted results, the contract grants decryption rights (`FHE.allowThis`, `FHE.allow`) to itself and the user, and serializes each encrypted value into `bytes32` via `FHE.toBytes32(...)` for storage.
+
+**How circuits map to Solidity**
+- `fhe-circuits/eligibility.fhe` mirrors `_evaluateFHE` eligibility:
+  - `threshold_balance = 0.25e18`, `min_interactions = 3`, `max_sybil_score = 5000`, and checks `(balance >= threshold_balance) & ((nftFlags & 1) != 0) & (interactions >= min_interactions) & (sybilScore <= max_sybil_score)`.
+- `fhe-circuits/tier.fhe` mirrors the tier score:
+  - `balance_norm = balance / 1e18`
+  - `score = balance_norm * 20 + interactions * 5`
+  - Gold if `score >= 200`, Silver if `score >= 100`, else Bronze.
+- `fhe-circuits/loot.fhe` mirrors loot generation:
+  - `randomValue = (randomSeed + nonce) % 100`
+  - `baseProbability = tier * 20 + 30`
+  - Winner if `randomValue < baseProbability`.
+  - Loot index is `randomSeed % max_loot_items`, reward amount is `100 / 500 / 1000 * 1e18` tokens gated by `isWinner`.
+
+### 3. How to Run
+
+**Local dev (contracts + frontend)**
+1. Install dependencies:
+   ```bash
+   git clone <your-repo-url>
+   cd ShadowBox
+   npm install
+   cd frontend && npm install && cd ..
+   ```
+2. Configure root `.env` (for Hardhat Sepolia deploy):
+   ```bash
+   cp .env.example .env
+   # Edit .env with:
+   #   PRIVATE_KEY=<sepolia deployer private key>
+   #   SEPOLIA_RPC_URL=<your Sepolia RPC URL>
+   ```
+3. Compile & deploy contracts to Sepolia:
+   ```bash
+   npm run compile
+   npm run deploy
+   # Save the printed ShadowBoxCore, RewardToken, Redeemer addresses
+   ```
+4. Configure frontend `.env.local`:
+   ```bash
+   cd frontend
+   cp .env.example .env.local
+   # Edit .env.local with values from deploy output:
+   #   NEXT_PUBLIC_SHADOWBOX_ADDRESS=<ShadowBoxCore>
+   #   NEXT_PUBLIC_REWARD_TOKEN_ADDRESS=<RewardToken>
+   #   NEXT_PUBLIC_REDEEMER_ADDRESS=<Redeemer>
+   #   NEXT_PUBLIC_CHAIN_ID=11155111
+   #   NEXT_PUBLIC_RPC_URL=<your Sepolia RPC URL>
+   #   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<WalletConnect project id>
+   # Server-only envs for API route:
+   #   RPC_URL=<same Sepolia RPC URL>
+   #   REDEEMER_ADDRESS=<Redeemer>
+   #   VOUCHER_SIGNER_PRIVATE_KEY=<same key used as signer/deployer>
+   ```
+5. Run the app locally:
+   ```bash
+   # from frontend/
+   npm run dev --webpack
+   # open http://localhost:3000
+   ```
+
+**Vercel deployment (frontend only)**
+- Root directory: `frontend/`.
+- Build command: `npm run build`.
+- Env vars in Vercel:
+  - `NEXT_PUBLIC_SHADOWBOX_ADDRESS`, `NEXT_PUBLIC_REWARD_TOKEN_ADDRESS`, `NEXT_PUBLIC_REDEEMER_ADDRESS`
+  - `NEXT_PUBLIC_CHAIN_ID=11155111`
+  - `NEXT_PUBLIC_RPC_URL=<Sepolia RPC>`
+  - `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<your project id>`
+  - `RPC_URL=<same Sepolia RPC>`
+  - `REDEEMER_ADDRESS=<Redeemer address>`
+  - `VOUCHER_SIGNER_PRIVATE_KEY=<signer private key>`
+
+### 4. Deployed Addresses (Sepolia)
+
+> NOTE: replace with the latest values from your most recent `npm run deploy` output when you submit.
+
+- `ShadowBoxCore`: `0x2b75549e23C583469900ca9e267f21582b2FBAA8`
+- `RewardToken (SHBX)`: `0xe875e2882ca151AB3f0c35061A96C1e8a084cc60`
+- `Redeemer`: `0xe54c94D5B1ce490c0088b5CCd3E48E7d57BE6EDe`
+
+### 5. User Flow (Demo)
+
+1. **Connect Wallet** – Open the app, connect a Sepolia wallet via AppKit/wagmi.
+2. **Prepare** – Go to `/prepare` and set eligibility inputs (balance, NFT flags, interactions, sybil score) or use the random generator.
+3. **Submit (FHE)** – Click **Encrypt & Submit**; the frontend derives a key from a wallet signature, encrypts inputs via the FHE relayer SDK, and calls `ShadowBoxCore.submitEligibility` with encrypted payload + proof.
+4. **Status** – Visit `/status` to see your submissions and on-chain `EligibilityChecked` events.
+5. **Decrypt** – Go to `/decrypt` (or via the status link), re-sign to re-derive the key, fetch encrypted outputs (`userEligibility`, `userTier`, `userLootIndex`, `userRewardAmount`), and decrypt locally to reveal tier, loot index, and SHBX reward.
+6. **Claim Reward** – Click **Claim Reward** to trigger the backend `/api/issue-voucher` route (which issues and redeems a signed voucher based on your tier) and then call `Redeemer.withdrawRewards()` from the browser, transferring SHBX tokens to your wallet.
+
 ## 🧪 Testing
 
 ### Run All Tests
