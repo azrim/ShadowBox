@@ -62,31 +62,44 @@ The system has three main parts: the browser dapp, the FHEVM smart contracts, an
 
 ## 📦 Project Structure
 
-```
-shadowbox/
-├── contracts/              # Solidity smart contracts
-│   ├── ShadowBoxCore.sol  # Main eligibility contract
-│   ├── Redeemer.sol       # Voucher redemption contract
-│   └── interfaces/        # Contract interfaces
-├── fhe-circuits/          # FHE circuit configurations
-│   ├── eligibility.fhe    # Eligibility evaluation
-│   ├── tier.fhe          # Tier assignment
-│   └── loot.fhe          # Loot generation
-├── scripts/              # Deployment scripts
-│   ├── deploy.ts        # Deploy contracts
-│   └── seedLoot.ts      # Generate loot table
-├── test/                # Contract tests
-│   ├── eligibility.test.ts
-│   └── redeem.test.ts
-├── frontend/            # Next.js frontend
-│   ├── src/
-│   │   ├── pages/      # Next.js pages
-│   │   ├── components/ # React components
-│   │   ├── lib/       # Utilities and contracts
-│   │   └── styles/    # CSS styles
-│   └── package.json
-├── hardhat.config.ts   # Hardhat configuration
-└── package.json       # Root dependencies
+```text
+ShadowBox/
+├── contracts/                  # Solidity smart contracts
+│   ├── Redeemer.sol           # Voucher-based reward contract
+│   ├── RewardToken.sol        # ERC20 SHBX reward token
+│   ├── ShadowBoxCore.sol      # Main FHE eligibility + loot contract
+│   └── interfaces/
+│       └── IRedeemer.sol      # Redeemer interface
+├── fhe-circuits/              # FHE circuit configs (mirrors on-chain logic)
+│   ├── eligibility.fhe        # Eligibility checks
+│   ├── loot.fhe               # Loot & reward generation
+│   └── tier.fhe               # Tier scoring
+├── scripts/                   # Hardhat scripts
+│   ├── deploy.ts              # Deploy ShadowBoxCore, RewardToken, Redeemer
+│   ├── issueVoucher.ts        # (Optional) local voucher issuance helper
+│   └── seedLoot.ts            # Seed loot configuration / rewards
+├── test/                      # Contract tests
+│   ├── eligibility.test.ts    # ShadowBoxCore tests
+│   └── redeem.test.ts         # Redeemer + RewardToken tests
+├── frontend/                  # Next.js dapp (AppKit + wagmi + relayer SDK)
+│   ├── next.config.js
+│   ├── public/
+│   │   ├── favicon.ico
+│   │   └── shadowbox-demo.webm
+│   └── src/
+│       ├── components/        # React UI (EncryptionFlow, DecryptionFlow, etc.)
+│       ├── data/              # Static content / copy
+│       ├── lib/               # Contracts, FHE helpers, error helpers, providers
+│       ├── pages/             # /, /prepare, /status, /decrypt, /demo, API routes
+│       ├── styles/            # Tailwind base styles
+│       ├── types/             # Shared TS types
+│       └── utils/             # Frontend utilities
+├── typechain-types/           # TypeScript bindings for contracts
+├── .github/                   # Contributing docs, issue and PR templates
+├── hardhat.config.ts          # Hardhat configuration
+├── package.json               # Root dependencies & scripts
+├── SHADOWBOX_BLUEPRINT.md     # Detailed architectural blueprint
+└── README.md                  # This file
 ```
 
 ## 🚀 Quick Start
@@ -191,17 +204,18 @@ You should see output similar to:
 ### Deploy Contracts
 
 ```bash
-# Deploy to local hardhat network
-npm run node  # In one terminal
-npm run deploy  # In another terminal
+# Deploy to local Hardhat network
+npm run node          # In one terminal
+npm run deploy        # In another terminal (uses default network config)
 
-# Or deploy to Zama testnet
-npm run deploy -- --network zama-testnet
+# Or deploy directly to Sepolia (configured in hardhat.config.ts)
+npm run deploy
 ```
 
 Save the deployed contract addresses to `frontend/.env.local`:
 ```
 NEXT_PUBLIC_SHADOWBOX_ADDRESS=0x...
+NEXT_PUBLIC_REWARD_TOKEN_ADDRESS=0x...
 NEXT_PUBLIC_REDEEMER_ADDRESS=0x...
 ```
 
@@ -252,23 +266,23 @@ If you received a voucher, use the redeem flow to claim your tokens:
 ## 🔐 Privacy Guarantees
 
 ### What's Private (Encrypted On-Chain)
-- ✅ Balance amounts
-- ✅ NFT holdings and flags
-- ✅ Interaction counts
-- ✅ Sybil scores
+- ✅ Eligibility inputs (balance, NFT flags, interaction counts, sybil scores)
 - ✅ Assigned tier (Bronze/Silver/Gold)
-- ✅ Loot box contents
+- ✅ Loot box index and reward amount (SHBX)
+- ✅ All intermediate scoring and randomness inside `_evaluateFHE`
+- ✅ Decrypted tier/loot/reward values (only revealed in the user’s browser)
 
 ### What's Public
-- ℹ️ Eligibility boolean (yes/no)
-- ℹ️ Submission timestamp
-- ℹ️ Transaction hash
+- ℹ️ Your wallet address and that you interacted with the contracts
+- ℹ️ Existence and timing of an eligibility submission (events + block timestamp)
+- ℹ️ Transaction hashes and gas usage
+- ℹ️ That a reward was claimed (Redeemer events and SHBX transfers)
 
-### Key Security
-- 🔑 Keys derived from wallet signatures (never stored)
-- 🔑 Encryption happens client-side
-- 🔑 Decryption happens client-side
-- 🔑 No keys transmitted to servers
+### Key & Relayer Security
+- 🔑 Wallet private keys never leave the wallet provider (AppKit / injected wallet)
+- 🔑 Eligibility inputs are encrypted via the Zama FHE relayer SDK before they hit the FHEVM contract
+- 🔑 Decryption of outputs uses user-bound FHE tokens and happens in the browser
+- 🔑 Backend voucher API only sees your address and tier, never raw eligibility metrics or FHE secrets
 
 ## 🧠 Detailed Design & FHEVM Integration
 
@@ -374,11 +388,11 @@ On top of this encrypted eligibility pipeline, ShadowBox adds an encrypted tier 
 
 ### 4. Deployed Addresses (Sepolia)
 
-> NOTE: replace with the latest values from your most recent `npm run deploy` output when you submit.
+> NOTE: replace with the latest values from your most recent `npm run deploy` output.
 
-- `ShadowBoxCore`: `0x2b75549e23C583469900ca9e267f21582b2FBAA8`
-- `RewardToken (SHBX)`: `0xe875e2882ca151AB3f0c35061A96C1e8a084cc60`
-- `Redeemer`: `0xe54c94D5B1ce490c0088b5CCd3E48E7d57BE6EDe`
+- `ShadowBoxCore`: `0xE3255bdCf40F0BB4dCd5E8e7b2871833a5D19493`
+- `RewardToken (SHBX)`: `0x099a122bE76c64BB8B71E26c30E47825e91E1557`
+- `Redeemer`: `0xC9De8A814cCcA8ce752253a5193AAD48d3DCB4f0`
 
 ### 5. User Flow (Demo)
 
@@ -502,7 +516,7 @@ Set environment variables in Vercel dashboard:
 
 ## 🤝 Contributing
 
-This is a hackathon/demo project. For improvements:
+This is currently a demo project. For improvements:
 1. Fork the repository
 2. Create a feature branch
 3. Commit your changes
