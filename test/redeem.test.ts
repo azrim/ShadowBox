@@ -111,7 +111,17 @@ describe("Redeemer - Voucher Tests", function () {
       
       await expect(
         redeemer.connect(user1).redeem(voucher, signature)
-      ).to.be.revertedWithCustomError(redeemer, "VoucherAlreadyUsed");
+      ).to.be.revertedWithCustomError(redeemer, "AlreadyClaimed");
+    });
+
+    it("Should prevent user from claiming multiple times with new vouchers", async function () {
+      const first = await createValidVoucher(user1.address, 100);
+      await redeemer.connect(user1).redeem(first.voucher, first.signature);
+
+      const second = await createValidVoucher(user1.address, 200);
+      await expect(
+        redeemer.connect(user1).redeem(second.voucher, second.signature)
+      ).to.be.revertedWithCustomError(redeemer, "AlreadyClaimed");
     });
 
     it("Should reject expired voucher", async function () {

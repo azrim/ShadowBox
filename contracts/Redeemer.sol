@@ -16,6 +16,8 @@ contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
     IERC20 public rewardToken;
     mapping(bytes32 => bool) public usedVouchers;
     mapping(address => uint256) public rewardBalance;
+    /// @notice Tracks whether a user has already claimed any reward.
+    mapping(address => bool) public hasClaimed;
     
     uint256 public totalRewardsDistributed;
     bool public paused;
@@ -25,6 +27,7 @@ contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
     error InvalidSignature();
     error ContractPaused();
     error InsufficientRewards();
+    error AlreadyClaimed();
 
     event SignerUpdated(address indexed oldSigner, address indexed newSigner);
     event RewardsAdded(uint256 amount);
@@ -41,6 +44,7 @@ contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
     ) external override nonReentrant {
         if (paused) revert ContractPaused();
         if (block.timestamp > voucher.expiry) revert VoucherExpired();
+        if (hasClaimed[voucher.user]) revert AlreadyClaimed();
         
         bytes32 voucherHash = _hashVoucher(voucher);
         
@@ -52,6 +56,7 @@ contract Redeemer is IRedeemer, Ownable, ReentrancyGuard {
         if (recoveredSigner != signer) revert InvalidSignature();
         
         usedVouchers[voucherHash] = true;
+        hasClaimed[voucher.user] = true;
         rewardBalance[voucher.user] += voucher.amount;
         totalRewardsDistributed += voucher.amount;
         
