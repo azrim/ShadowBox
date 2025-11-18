@@ -19,38 +19,43 @@ ShadowBox demonstrates private eligibility, private tier assignment, and encrypt
 
 ## 🏗️ Architecture
 
-```
+The system has three main parts: the browser dapp, the FHEVM smart contracts, and the voucher-based reward path.
+
+```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                         User Browser                             │
+│                         Browser dapp                            │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │ 1. Derive key from wallet signature (HKDF-SHA256)        │  │
-│  │ 2. Encrypt eligibility data (libsodium)                  │  │
-│  │ 3. Submit encrypted payload to FHEVM                     │  │
+│  │ 1. Connect wallet via AppKit + wagmi                     │  │
+│  │ 2. Build eligibility payload in React UI                 │  │
+│  │ 3. Encrypt inputs with Zama FHE relayer SDK              │  │
+│  │ 4. Submit encrypted payload + proof to FHEVM             │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └────────────────────────────────┬────────────────────────────────┘
                                  │
                                  ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    FHEVM Smart Contracts                         │
+│                      FHEVM smart contracts                      │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │ ShadowBoxCore                                            │  │
-│  │   ├─ Evaluate eligibility (FHE circuits)                │  │
-│  │   ├─ Assign tier (FHE computation)                      │  │
-│  │   └─ Generate encrypted loot                            │  │
+│  │   ├─ Evaluate eligibility (encrypted)                    │  │
+│  │   ├─ Assign tier (Bronze/Silver/Gold under FHE)          │  │
+│  │   └─ Generate encrypted loot + reward amount             │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │ Redeemer                                                 │  │
-│  │   └─ Validate and redeem vouchers                       │  │
+│  │   ├─ Accept signed vouchers from backend                 │  │
+│  │   └─ Allow users to withdraw SHBX rewards                │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └────────────────────────────────┬────────────────────────────────┘
                                  │
                                  ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                         User Browser                             │
+│                         Browser dapp                            │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │ 4. Fetch encrypted loot from events                      │  │
-│  │ 5. Decrypt locally with same key                         │  │
-│  │ 6. Redeem voucher for tokens/NFTs                        │  │
+│  │ 5. Fetch encrypted outputs via RPC/events                │  │
+│  │ 6. Decrypt locally with user-bound FHE token             │  │
+│  │ 7. Call backend API to issue voucher + redeem on-chain   │  │
+│  │ 8. Withdraw SHBX via Redeemer contract                   │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -212,7 +217,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ## 🎮 Usage Flow
 
 ### 1. Connect Wallet
-Visit the homepage and connect your MetaMask wallet.
+Visit the homepage and connect your wallet using the AppKit-powered connect button (wagmi + WalletConnect under the hood).
 
 ### 2. Prepare Eligibility Data
 Navigate to `/prepare` and either:
@@ -221,10 +226,10 @@ Navigate to `/prepare` and either:
 
 ### 3. Encrypt & Submit
 Click "Encrypt & Submit":
-1. Sign a message to derive your encryption key
-2. Data is encrypted locally
-3. Encrypted payload is submitted to the smart contract
-4. Wait for transaction confirmation
+1. Sign a message in your wallet to authorize FHE encryption
+2. The frontend uses the Zama FHE relayer SDK to encrypt your inputs and generate a proof
+3. The encrypted payload + proof is submitted to the `ShadowBoxCore` contract
+4. Wait for the FHEVM transaction confirmation
 
 ### 4. Check Status
 Visit `/status` to view your submissions. You'll see:
@@ -239,7 +244,10 @@ Click "Decrypt Loot Box":
 3. Decrypt locally to reveal your rewards
 
 ### 6. Redeem Voucher
-If you received a voucher, use the redeem page to claim your tokens.
+If you received a voucher, use the redeem flow to claim your tokens:
+- The frontend calls the backend `/api/issue-voucher` route with your address and tier
+- The backend issues and redeems a signed voucher against the `Redeemer` contract
+- You then call `withdrawRewards()` from the dapp to pull SHBX tokens to your wallet
 
 ## 🔐 Privacy Guarantees
 
@@ -262,7 +270,7 @@ If you received a voucher, use the redeem page to claim your tokens.
 - 🔑 Decryption happens client-side
 - 🔑 No keys transmitted to servers
 
-## 🏁 Submission Overview
+## 🧠 Detailed Design & FHEVM Integration
 
 ### 1. Project Summary
 
@@ -463,13 +471,14 @@ Set environment variables in Vercel dashboard:
 - Zama FHEVM SDK
 
 ### Frontend
-- Next.js 14
+- Next.js 16 (pages router)
+- React 18
 - TypeScript
 - TailwindCSS
-- wagmi + RainbowKit
-- ethers.js v6
-- libsodium-wrappers (encryption)
-- hkdf (key derivation)
+- @reown/appkit + wagmi v2 + viem + WalletConnect
+- @tanstack/react-query
+- ethers v6
+- @zama-fhe/relayer-sdk (FHE encryption + proofs)
 
 ### Testing
 - Hardhat Toolbox
@@ -506,7 +515,7 @@ MIT License - see LICENSE file for details
 ## 🔗 Links
 
 - **Live dapp**: https://shadow-box-beta.vercel.app
-- **Documentation**: [Blueprint](./shadow_box_full_blueprint_hybrid_shadow_airdrop.md)
+- **Documentation**: [Blueprint](./SHADOWBOX_BLUEPRINT.md)
 - **Zama Docs**: https://docs.zama.ai
 - **FHEVM**: https://github.com/zama-ai/fhevm
 
@@ -516,10 +525,3 @@ This is a proof-of-concept for educational purposes. The FHE integration uses a 
 
 **DO NOT USE WITH REAL FUNDS WITHOUT PROPER AUDITS**
 
-## 🎯 Submission
-
-Built for **Zama Builder Track** - demonstrating practical use of Fully Homomorphic Encryption for privacy-preserving airdrops and reward distribution systems.
-
----
-
-**Built with ❤️ for privacy-first rewards**
