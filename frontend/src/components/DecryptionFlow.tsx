@@ -6,6 +6,7 @@ import { ethers } from "ethers";
 import { getFheInstance, getToken } from "@/lib/fhe";
 import { getShadowBoxContract } from "@/lib/contracts";
 import { rpcProvider } from "@/lib/provider";
+import { mapRedeemerError, parseEthersError } from "@/lib/errors";
 
 interface DecryptionFlowProps {
   transactionHash?: string;
@@ -157,7 +158,30 @@ export default function DecryptionFlow({
       await tx.wait();
     } catch (err: any) {
       console.error("Claim error:", err);
-      setError(err.message || "Failed to claim rewards");
+
+      let message = "Failed to claim rewards";
+
+      // If backend returned JSON { error }, surface that.
+      if (err instanceof Error && err.message) {
+        message = err.message;
+      }
+
+      // If this was a fetch error with a Response attached, try to parse it.
+      if ((err as any).response && typeof (err as any).response.json === "function") {
+        try {
+          const data = await (err as any).response.json();
+          if (data?.error) {
+            message = data.error;
+          }
+        } catch (_) {
+          // ignore JSON parse errors
+        }
+      } else {
+        const parsed = parseEthersError(err);
+        message = mapRedeemerError(parsed.raw) || parsed.friendly;
+      }
+
+      setError(message);
     } finally {
       setIsClaiming(false);
     }

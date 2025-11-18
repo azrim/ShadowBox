@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { AbiCoder, Contract, JsonRpcProvider, Wallet, keccak256, getBytes, parseEther } from "ethers";
+import { mapRedeemerError, parseEthersError } from "@/lib/errors";
 
 // This API runs server-side (Vercel function or local dev), so it can safely
 // use a private key from env to sign vouchers.
@@ -81,6 +82,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (err: any) {
     console.error("issue-voucher error:", err);
-    return res.status(500).json({ error: err?.message || "Internal server error" });
+
+    const parsed = parseEthersError(err);
+    const friendly = mapRedeemerError(parsed.raw) || parsed.friendly;
+
+    // Map a few known cases to HTTP codes; default to 500
+    let statusCode = 500;
+    if (friendly.includes("already claimed")) statusCode = 400;
+    else if (friendly.includes("expired")) statusCode = 400;
+    else if (friendly.includes("already been used")) statusCode = 400;
+    else if (friendly.includes("temporarily paused")) statusCode = 503;
+    else if (friendly.includes("No rewards")) statusCode = 400;
+
+    return res.status(statusCode).json({ error: friendly });
   }
 }

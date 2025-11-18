@@ -7,6 +7,7 @@ import {
 } from "@/lib/crypto";
 import { getShadowBoxContract } from "@/lib/contracts";
 import { getFheInstance } from "@/lib/fhe";
+import { mapShadowBoxError, parseEthersError } from "@/lib/errors";
 
 interface EncryptionFlowProps {
   onSuccess?: (txHash: string) => void;
@@ -29,6 +30,8 @@ export default function EncryptionFlow({ onSuccess }: EncryptionFlowProps) {
     setPayload(createMockEligibilityPayload());
   };
 
+  const COOLDOWN_SECONDS = 3600; // must match SUBMISSION_COOLDOWN in ShadowBoxCore
+
   const handleSubmit = async () => {
     if (!address) {
       setError("Please connect your wallet");
@@ -42,12 +45,45 @@ export default function EncryptionFlow({ onSuccess }: EncryptionFlowProps) {
 
     setIsProcessing(true);
     setError(null);
-    setStep("encrypt");
 
     try {
       const provider = new ethers.BrowserProvider((window as any).ethereum);
       const signer = await provider.getSigner();
       const contractAddress = process.env.NEXT_PUBLIC_SHADOWBOX_ADDRESS!;
+
+      const contract = getShadowBoxContract(contractAddress, signer);
+
+      // Pre-check status to avoid on-chain revert and show a friendly message.
+      const status = await contract.getUserStatus(address);
+      const now = Math.floor(Date.now() / 1000);
+
+      if (!status.canSubmitNow) {
+        const last = Number(status.lastSubmissionTime || 0);
+        const nextAllowed = last + COOLDOWN_SECONDS;
+        const remaining = Math.max(0, nextAllowed - now);
+        const minutes = Math.ceil(remaining / 60);
+
+        setError(
+          minutes > 0
+            ? `You recently submitted. You can submit again in about ${minutes} minute${
+                minutes === 1 ? "" : "s"
+              }.`
+            : "You are currently on cooldown. Please try again in a moment."
+        );
+        setIsProcessing(false);
+        setStep("prepare");
+        return;
+      }
+
+      const paused = await contract.paused();
+      if (paused) {
+        setError("Submissions are currently paused by the contract admin.");
+        setIsProcessing(false);
+        setStep("prepare");
+        return;
+      }
+
+      setStep("encrypt");
 
       const fhe = await getFheInstance();
 
@@ -66,7 +102,6 @@ export default function EncryptionFlow({ onSuccess }: EncryptionFlowProps) {
       };
 
       setStep("submit");
-      const contract = getShadowBoxContract(contractAddress, signer);
       const txRequest = await contract.submitEligibility.populateTransaction(
         encryptedPayload,
         inputProof
@@ -82,14 +117,10 @@ export default function EncryptionFlow({ onSuccess }: EncryptionFlowProps) {
       setStep("done");
     } catch (err: any) {
       console.error("FHE encryption / submit error:", err);
-      let message = err.message || "Submission failed";
-      if (
-        message.includes("FHE_NODE_NOT_CONNECTED") ||
-        message.includes("HTTP request failed")
-      ) {
-        message =
-          "Failed to connect to FHE coprocessor. Please check your RPC and network connection.";
-      }
+
+      const parsed = parseEthersError(err);
+      const message = mapShadowBoxError(parsed.raw) || parsed.friendly;
+
       setError(message);
       setStep("prepare");
     } finally {
