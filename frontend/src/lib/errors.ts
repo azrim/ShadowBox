@@ -14,11 +14,16 @@ export function parseEthersError(err: any): ParsedError {
     return { raw: "", friendly: "Unknown error" };
   }
 
-  const raw =
+  let raw =
     err.message ||
     err.shortMessage ||
     (err.error && err.error.message) ||
     (typeof err === "string" ? err : "");
+
+  // Include low-level data field if present so selector-based matching works
+  if (!raw && err.data && typeof err.data === "string") {
+    raw = err.data;
+  }
 
   const code = (err as any).code;
 
@@ -57,6 +62,12 @@ export function mapShadowBoxError(raw: string): string {
 /** Map Redeemer revert reasons to UX copy. */
 export function mapRedeemerError(raw: string): string {
   if (!raw) return "Failed to claim rewards";
+
+  // Handle cases where ethers only returns the 4-byte selector in data
+  // 0x646cf558 is the selector for AlreadyClaimed()
+  if (raw.includes("0x646cf558")) {
+    return "You have already claimed your reward for this campaign.";
+  }
 
   if (raw.includes("AlreadyClaimed") || raw.includes("errorName=AlreadyClaimed")) {
     return "You have already claimed your reward for this campaign.";
